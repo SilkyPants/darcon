@@ -3,6 +3,6 @@
 /// More dartdocs go here.
 library;
 
-export 'src/darcon_base.dart';
+export 'src/rcon_client.dart';
 
 // TODO: Export any libraries intended for clients of this package.

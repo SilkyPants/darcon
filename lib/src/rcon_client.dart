@@ -2,6 +2,10 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:darcon/src/rcon_packet.dart';
+
+import 'rcon_packet_type.dart';
+
 enum RconState {
   disconnected,
   connecting,
@@ -32,7 +36,7 @@ class RconClient {
 
       // handle errors
       onError: (error) {
-        print(error);
+        print('Error: $error');
         close();
       },
 
@@ -44,7 +48,8 @@ class RconClient {
     );
 
     _connectionState = RconState.authenticating;
-    _socket.add(_buildPacket(0, RconPacketType.login, password));
+    final packet = RconPacket.login(password: password);
+    _socket.add(packet.data);
     await _socket.flush();
 
     await Future.microtask(() async {
@@ -72,29 +77,13 @@ class RconClient {
   }
 
   Future<void> sendCommand(String command) async {
-    final packet = _buildPacket(
-      _getNextRequestId(),
-      RconPacketType.command,
-      command,
+    final packet = RconPacket.command(
+      id: _getNextRequestId(),
+      command: command,
     );
     print('Sending packet: $packet');
-    _socket.add(packet);
+    _socket.add(packet.data);
     return _socket.flush();
-  }
-
-  Uint8List _buildPacket(
-      int requestId, RconPacketType packetType, String payload) {
-    var payloadLength = payload.length;
-    var packetLength = 14 + payloadLength;
-    var packet = Uint8List(packetLength);
-
-    packet.setRange(0, 4, _intToBytes(packetLength - 4));
-    packet.setRange(4, 8, _intToBytes(requestId));
-    packet.setRange(8, 12, _intToBytes(packetType.rawValue));
-    packet.setRange(12, packetLength - 2, payload.codeUnits);
-    packet.setRange(packetLength - 2, packetLength, [0, 0]);
-
-    return packet;
   }
 
   List<RconPacket> _readPackets() {
@@ -103,14 +92,16 @@ class RconClient {
     Uint8List.fromList(dataBuffer);
 
     // Peek the first 4 bytes (this is the packet length)
-    var packetLength = _bytesToInt(dataBuffer.sublist(0, 4));
+    var packetLength = bytesToInt(dataBuffer.sublist(0, 4));
     // If this is smaller than our buffer then we have everything
     // for at least one packet
     while ((packetLength + 4) <= dataBuffer.length) {
       // Grab the data and parse
-      final packetData =
-          Uint8List.fromList(dataBuffer.sublist(0, packetLength + 4));
-      final packet = _readPacket(packetData);
+      final packetData = Uint8List.fromList(
+        dataBuffer.sublist(0, packetLength + 4),
+      );
+
+      final packet = RconPacket.fromData(packetData);
       packets.add(packet);
       // Remove the bytes from the buffer
       dataBuffer.removeRange(0, packetLength + 4);
@@ -119,33 +110,7 @@ class RconClient {
     return packets;
   }
 
-  RconPacket _readPacket(Uint8List data) {
-    var packetLength = _bytesToInt(data.sublist(0, 4));
-    var packetId = _bytesToInt(data.sublist(4, 8));
-    var packetType = _bytesToInt(data.sublist(8, 12));
-    var payload =
-        packetLength > 10 ? String.fromCharCodes(data.sublist(12)) : '';
-
-    return RconPacket(
-      packetId,
-      RconPacketType.fromInt(packetType),
-      payload,
-      data,
-    );
-  }
-
-  Uint8List _intToBytes(int value) {
-    var byteData = ByteData(4);
-    byteData.setUint32(0, value, Endian.little);
-    return byteData.buffer.asUint8List();
-  }
-
-  int _bytesToInt(List<int> bytes) {
-    var byteData = Uint8List.fromList(bytes);
-    return ByteData.view(byteData.buffer).getInt32(0, Endian.little);
-  }
-
-  final maxRequestId = 2147483647;
+  final maxRequestId = 0x7fffffff; //2147483647 or half max unsigned int32;
   int _getNextRequestId() {
     _requestId = (_requestId + 1) % maxRequestId;
     return _requestId;
@@ -154,33 +119,5 @@ class RconClient {
   void close() {
     _socket.close();
     _connectionState = RconState.disconnected;
-  }
-}
-
-enum RconPacketType {
-  responseValue(0),
-  command(2),
-  authResponse(2),
-  login(3);
-
-  const RconPacketType(this.rawValue);
-  final int rawValue;
-
-  factory RconPacketType.fromInt(int value) {
-    return RconPacketType.values[value];
-  }
-}
-
-class RconPacket {
-  final int id;
-  final RconPacketType type;
-  final String payload;
-  final Uint8List data;
-
-  RconPacket(this.id, this.type, this.payload, this.data);
-
-  @override
-  String toString() {
-    return '($id) $type Payload\n"$payload"\n\n$data';
   }
 }
