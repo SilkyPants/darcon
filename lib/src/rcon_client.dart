@@ -117,6 +117,8 @@ class RconClient {
   }
 
   void close() {
+    if (connectionState == RconState.disconnected) return;
+
     _socket.close();
     _connectionState = RconState.disconnected;
   }
