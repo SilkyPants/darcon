@@ -62,11 +62,11 @@ class RconClient {
   }
 
   _processIncomingData(Uint8List data) {
-    print('Data Recieved');
+    // print('Data Recieved');
     dataBuffer.addAll(data);
     final responses = _readPackets();
     for (var response in responses) {
-      print(response);
+      print(response.payload);
 
       if (isAuthenticating &&
           response.type == RconPacketType.authResponse &&
@@ -81,7 +81,7 @@ class RconClient {
       id: _getNextRequestId(),
       command: command,
     );
-    print('Sending packet: $packet');
+    // print('Sending packet: $packet');
     _socket.add(packet.data);
     return _socket.flush();
   }
